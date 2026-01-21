@@ -1,6 +1,6 @@
 import streamlit as st
 from game_logic import TicTacToe
-from agent import RandomPlayer
+from agent import RandomPlayer, LLMPlayer
 import time
 
 st.set_page_config(page_title="Tic Tac Toe AI", page_icon="🎮", layout="centered")
@@ -100,7 +100,7 @@ with st.sidebar:
     st.header("⚙️ Settings")
     opponent_type = st.selectbox(
         "Choose Opponent", 
-        ["Random"]
+        ["Random", "LLMPlayer"]
     )
     st.markdown("---")
     
@@ -140,6 +140,8 @@ if st.session_state.current_turn == 'O' and not st.session_state.game_over:
         ai_player = None
         if opponent_type == "Random":
             ai_player = RandomPlayer('O')
+        elif opponent_type == "LLMPlayer":
+            ai_player = LLMPlayer('O')
 
         
         if ai_player:
