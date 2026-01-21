@@ -62,50 +62,40 @@ class LLMPlayer(RandomPlayer):
         
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
     def _get_llm_move(self, game):
-        # Prepare Data Views
-        board_visual = self._format_board(game)
-        # Create a list view like ['X', '1', '2', 'O'...]
-        board_list = [x if x != " " else str(i) for i, x in enumerate(game.board)]
+        # HELPER: Pre-calculate line states 
+        line_analysis_text = self._analyze_board_lines(game)
         
-        opponent = 'O' if self.letter == 'X' else 'X'
-
-        # Construct the Chain-of-Thought Prompt
         prompt = f"""
-You are a Tic Tac Toe expert engine. You are playing as '{self.letter}'. Opponent is '{opponent}'.
+You are a Tic Tac Toe expert. 
+Your goal is to win or draw. You NEVER lose if a block is possible.
 
-BOARD STATE (Visual):
-{board_visual}
+You are playing as: '{self.letter}'
+Opponent is: '{'O' if self.letter == 'X' else 'X'}'
 
-BOARD STATE (List):
-{board_list}
+CURRENT BOARD ANALYSIS:
+{line_analysis_text}
 
-AVAILABLE MOVES: 
-{game.available_moves()}
+AVAILABLE MOVES: {game.available_moves()}
 
-WINNING LINES (Indices):
-Rows: [0,1,2], [3,4,5], [6,7,8]
-Cols: [0,3,6], [1,4,7], [2,5,8]
-Diagonals: [0,4,8], [2,4,6]
+STRATEGY PRIORITY (Follow Strictly):
+1. **WIN**: If any line has 2 of YOUR pieces and 1 EMPTY, play the EMPTY spot immediately.
+2. **BLOCK**: If any line has 2 OPPONENT pieces and 1 EMPTY, play the EMPTY spot immediately.
+3. **CENTER**: If '4' is available, take it.
+4. **CORNERS**: If 0, 2, 6, or 8 are available, take them.
 
 INSTRUCTIONS:
-You must think step-by-step inside <thinking> tags before outputting JSON.
-
-1. **Check for Win**: Look at all winning lines. Do you have 2 pieces in a line with the 3rd empty? If yes, take it.
-2. **Check for Block**: Does the opponent ('{opponent}') have 2 pieces in a line with the 3rd empty? If yes, BLOCK it immediately.
-3. **Strategic Play**: If no win or block, prefer the Center (4), then Corners (0,2,6,8).
-
-FORMAT:
-First, output your analysis in <thinking> tags.
-Then, output the move in strict JSON.
+- Read the "CURRENT BOARD ANALYSIS" above.
+- Identify the most critical line.
+- Output your reasoning inside <thinking> tags first.
+- Output the final move in JSON.
 
 Example Response:
 <thinking>
-Checking row [0,1,2]. I have 0. Opponent has 1. 2 is empty. No immediate threat.
-Checking diagonal [0,4,8]. Opponent has 0 and 8. 4 is empty. I MUST BLOCK index 4.
+Row 0 has 2 opponent pieces and index 2 is empty. This is a threat. I must BLOCK.
 </thinking>
 {{
-    "reasoning": "Opponent has a winning fork on diagonal, blocking at 4.",
-    "move": 4
+    "reasoning": "Blocking opponent on Row 0",
+    "move": 2
 }}
 """
         
@@ -131,29 +121,53 @@ Checking diagonal [0,4,8]. Opponent has 0 and 8. 4 is empty. I MUST BLOCK index 
         response_body = json.loads(response.get('body').read())
         response_text = response_body.get('content')[0].get('text')
         
-        # Clean up response to ensure pure JSON
+        # Parse JSON from the response (handling the thinking block)
         start = response_text.find('{')
         end = response_text.rfind('}') + 1
-
-        # Debug: Print the reasoning to see the LLM thinking
-        print(f"\n--- LLM THOUGHTS ---\n{response_text}\n--------------------\n")
-        
         if start != -1 and end != -1:
-             json_str = response_text[start:end]
+             return TicTacToeMove.model_validate_json(response_text[start:end]).move
+        raise ValueError("No JSON found")
+
+    def _analyze_board_lines(self, game):
+        """
+        Creates a text description of every winning line so the LLM
+        doesn't have to spatially parse the grid.
+        """
+        lines = [
+            (0,1,2), (3,4,5), (6,7,8), # Rows
+            (0,3,6), (1,4,7), (2,5,8), # Cols
+            (0,4,8), (2,4,6)           # Diagonals
+        ]
+        
+        report = []
+        board = game.board
+        
+        for a, b, c in lines:
+            # Get values at these positions (e.g., ['X', ' ', 'O'])
+            values = [board[a], board[b], board[c]]
+            # Get indices that are empty
+            empty_indices = [idx for idx, val in zip([a,b,c], values) if val == ' ']
+            
+            # Count X and O
+            x_count = values.count('X')
+            o_count = values.count('O')
+            
+            # Format a status string for the LLM
+            line_name = f"Line [{a},{b},{c}]"
+            status = f"Contains: {values}"
+            
+            # Add explicit Hints
+            if x_count == 2 and len(empty_indices) == 1:
+                status += f" -> WIN OPPORTUNITY for X at {empty_indices[0]}"
+            elif o_count == 2 and len(empty_indices) == 1:
+                status += f" -> WIN OPPORTUNITY for O at {empty_indices[0]}"
+            
+            report.append(f"{line_name}: {status}")
+            
+        # Explicitly mention Center
+        if board[4] == ' ':
+            report.append("CENTER CELL (4) IS EMPTY AND AVAILABLE.")
         else:
-             raise ValueError("No JSON found in response")
+            report.append(f"Center cell (4) is taken by {board[4]}.")
 
-        # Validate with Pydantic
-        move_data = TicTacToeMove.model_validate_json(json_str)
-        return move_data.move
-
-    def _format_board(self, game):
-        # Convert list to a visual grid for the LLM
-        b = [x if x != " " else str(i) for i, x in enumerate(game.board)]
-        return f"""
-{b[0]} | {b[1]} | {b[2]}
---+---+--
-{b[3]} | {b[4]} | {b[5]}
---+---+--
-{b[6]} | {b[7]} | {b[8]}
-"""
+        return "\n".join(report)
