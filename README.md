@@ -58,7 +58,7 @@ The game will automatically open in your default web browser at `http://localhos
 - `game_logic.py`: TicTacToe game logic, rules and possible moves
 - `agent.py`: The opponent players, Random player with random moves, AI player making a strategy with an LLM.
 
-## Sumary
+## Summary
 
 - My initial approach of just showing the model a text-based grid failed pretty hard because it lacked the spatial reasoning to spot diagonal threats. 
 - The real turning point was feeding the AI a report that explicitly listed which lines were about to win or needed blocking. 
