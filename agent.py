@@ -4,6 +4,7 @@ import json
 import boto3
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Load environment variables
 load_dotenv()
@@ -58,7 +59,7 @@ class LLMPlayer(RandomPlayer):
         except Exception as e:
             print(f"LLM Error: {e}. Fallback to RandomPlayer.")
             return super().get_move(game)
-
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def _get_llm_move(self, game):
         board_str = self._format_board(game)
         prompt = f"""
