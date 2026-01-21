@@ -134,6 +134,9 @@ Checking diagonal [0,4,8]. Opponent has 0 and 8. 4 is empty. I MUST BLOCK index 
         # Clean up response to ensure pure JSON
         start = response_text.find('{')
         end = response_text.rfind('}') + 1
+
+        # Debug: Print the reasoning to see the LLM thinking
+        print(f"\n--- LLM THOUGHTS ---\n{response_text}\n--------------------\n")
         
         if start != -1 and end != -1:
              json_str = response_text[start:end]
