@@ -101,7 +101,7 @@ Row 0 has 2 opponent pieces and index 2 is empty. This is a threat. I must BLOCK
         
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1000, # Increase to allow for thinking
+            "max_tokens": 250,
             "messages": [
                 {
                     "role": "user", 
