@@ -60,7 +60,7 @@ class LLMPlayer(RandomPlayer):
             print(f"LLM Error: {e}. Fallback to RandomPlayer.")
             return super().get_move(game)
         
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
     def _get_llm_move(self, game):
         # Prepare Data Views
         board_visual = self._format_board(game)
