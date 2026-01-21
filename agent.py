@@ -54,56 +54,64 @@ class LLMPlayer(RandomPlayer):
             if move_index in game.available_moves():
                 return move_index
             else:
-                print(f"LLM suggested invalid move {move_index}. Fallback.")
+                print(f"LLM suggested invalid move {move_index} (Occupied). Fallback.")
                 return super().get_move(game)
         except Exception as e:
             print(f"LLM Error: {e}. Fallback to RandomPlayer.")
             return super().get_move(game)
+        
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def _get_llm_move(self, game):
-        board_str = self._format_board(game)
+        # Prepare Data Views
+        board_visual = self._format_board(game)
+        # Create a list view like ['X', '1', '2', 'O'...]
+        board_list = [x if x != " " else str(i) for i, x in enumerate(game.board)]
+        
+        opponent = 'O' if self.letter == 'X' else 'X'
+
+        # Construct the Chain-of-Thought Prompt
         prompt = f"""
-You are a Tic Tac Toe Grandmaster. You play with perfect logic.
-You are player '{self.letter}'.
+You are a Tic Tac Toe expert engine. You are playing as '{self.letter}'. Opponent is '{opponent}'.
 
-BOARD MAP (Coordinates):
-0 | 1 | 2
---+---+--
-3 | 4 | 5
---+---+--
-6 | 7 | 8
+BOARD STATE (Visual):
+{board_visual}
 
-WINNING COMBINATIONS:
+BOARD STATE (List):
+{board_list}
+
+AVAILABLE MOVES: 
+{game.available_moves()}
+
+WINNING LINES (Indices):
 Rows: [0,1,2], [3,4,5], [6,7,8]
 Cols: [0,3,6], [1,4,7], [2,5,8]
 Diagonals: [0,4,8], [2,4,6]
 
-CURRENT BOARD STATE:
-{board_str}
+INSTRUCTIONS:
+You must think step-by-step inside <thinking> tags before outputting JSON.
 
-AVAILABLE MOVES: {game.available_moves()}
+1. **Check for Win**: Look at all winning lines. Do you have 2 pieces in a line with the 3rd empty? If yes, take it.
+2. **Check for Block**: Does the opponent ('{opponent}') have 2 pieces in a line with the 3rd empty? If yes, BLOCK it immediately.
+3. **Strategic Play**: If no win or block, prefer the Center (4), then Corners (0,2,6,8).
 
-STRATEGY HIERARCHY:
-1. WIN: If you have two in a row and the third is empty, take it.
-2. BLOCK: If the opponent has two in a row and the third is empty, block it.
-3. FORK: Create an opportunity where you have two ways to win.
-4. BLOCK FORK: Prevent the opponent from creating a fork.
-5. CENTER/CORNERS: Prioritize center (4), then corners (0,2,6,8).
+FORMAT:
+First, output your analysis in <thinking> tags.
+Then, output the move in strict JSON.
 
-TASK:
-Analyze the board state. Identify every winning combination where you or the opponent have pieces. 
-Then, output your decision in strict JSON format.
-
+Example Response:
+<thinking>
+Checking row [0,1,2]. I have 0. Opponent has 1. 2 is empty. No immediate threat.
+Checking diagonal [0,4,8]. Opponent has 0 and 8. 4 is empty. I MUST BLOCK index 4.
+</thinking>
 {{
-    "reasoning": "Step-by-step logic following the Strategy Hierarchy.",
-    "move": int
+    "reasoning": "Opponent has a winning fork on diagonal, blocking at 4.",
+    "move": 4
 }}
-Do NOT output any text other than the JSON. Do not use markdown code blocks.
 """
         
         body = json.dumps({
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 100,
+            "max_tokens": 1000, # Increase to allow for thinking
             "messages": [
                 {
                     "role": "user", 
@@ -126,6 +134,7 @@ Do NOT output any text other than the JSON. Do not use markdown code blocks.
         # Clean up response to ensure pure JSON
         start = response_text.find('{')
         end = response_text.rfind('}') + 1
+        
         if start != -1 and end != -1:
              json_str = response_text[start:end]
         else:
